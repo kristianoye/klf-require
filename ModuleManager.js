@@ -1,6 +1,4 @@
 'use strict';
-const ConfigUtil = require('./util/ConfigUtil');
-const ObjectUtil = require('./util/ObjectUtil');
 /**
  * KLF Require Core
  * Written by Kristian Oye
@@ -11,13 +9,15 @@ const ObjectUtil = require('./util/ObjectUtil');
 /// <reference path="index.d.ts" />
 
 const PathUtil = require('./util/PathUtil'),
-    { LogDetailLevel } = require('./Constants'),
+    { DetailLevelString, LogDetailLevel } = require('./Constants'),
     { EventEmitter } = require('events'),
     AstBuilder = require('./ast/AstBuilder'),
     GeneratorBase = require('./ast/generators/GeneratorBase'),
     ExtensionLoader = require('./loader/ExtensionLoader'),
     path = require('path'),
     fs = require('fs');
+const ConfigUtil = require('./util/ConfigUtil');
+const ObjectUtil = require('./util/ObjectUtil');
 
 /**
  * @implements {KLF}
@@ -31,11 +31,12 @@ class ModuleManager extends EventEmitter {
         super();
 
         /** @type {KLF.LogDetailLevel} */
-        this.debug = LogDetailLevel.tryParse(settings.debug || activeConfig.debug, LogDetailLevel.Error);
+        this.debug = typeof settings.debug === 'number' ? settings.debug : LogDetailLevel.tryParse(settings.debug || activeConfig.debug, LogDetailLevel.Error);
         this.settings = settings;
         this.components = {
-            ...settings.ast.baseBuilderType,
-            ...settings.ast.baseGeneratorType,
+            AstBuilder,
+            GeneratorBase,
+            ExtensionLoader,
             ...this.builderTypes,
             ...this.generatorTypes,
             ...settings.loaders
@@ -266,7 +267,8 @@ class ModuleManagerSafeWrapper extends EventEmitter {
             const parentTypeName = ObjectUtil.parentClassName(type);
             const altTypeName = typeof altName === 'string' && altName.trim();
             /** @type {KLF.IComponentEntry} */
-            const existing = parentTypeName in manager.components && manager.components[parentTypeName];
+            const existingParentDef = parentTypeName in manager.components && manager.components[parentTypeName];
+            const existingNamedDef = type.name in manager.components && manager.components[type.name];
             /** @type {KLF.IComponentEntry} */
             const newEntry = {
                 type,
@@ -277,47 +279,47 @@ class ModuleManagerSafeWrapper extends EventEmitter {
             if (false === type.name in manager.components) {
                 manager.components[type.name] = type;
             }
-            if (existing) {
+            if (existingParentDef) {
                 manager.components[parentTypeName] = type;
             }
             if (altTypeName && altTypeName !== type.name)
                 manager.components[altTypeName] = type;
 
-            if (type.prototype instanceof GeneratorBase) {
-                if (existing) {
-                    const existingConfig = manager.settings.ast.generators[parentTypeName] || {};
-                    manager.settings.ast.generators[parentTypeName] = { ...existingConfig, ...newEntry };
+            const updateTypeInfo = (targetConfig, newEntry) => {
+                if (existingParentDef) {
+                    const existingConfig = targetConfig[parentTypeName] || {};
+                    if (false === type.prototype instanceof existingParentDef)
+                        this.log(`registerComponent: Cannot redefine ${type.name} since it does not inherit from the existing type`,
+                            LogDetailLevel.Warning,
+                            { existingType: existingParentDef.type, newType: type });
+                    else if (existingNamedDef && false === type.prototype instanceof existingNamedDef)
+                        this.log(`registerComponent: Cannot redefine ${type.name} since it does not inherit from the existing type`,
+                            LogDetailLevel.Warning,
+                            { existingType: existingParentDef.type, newType: type });
+                    else
+                        targetConfig[parentTypeName] = { ...existingConfig, ...newEntry };
                 }
                 else
-                    manager.settings.ast.generators[type.name] = newEntry;
-            }
-            else if (type.prototype instanceof AstBuilder) {
-                if (existing) {
-                    const existingConfig = manager.settings.ast.builders[parentTypeName] || {};
-                    manager.settings.ast.builders[parentTypeName] = { ...existingConfig, ...newEntry };
-                }
-                else
-                    manager.settings.ast.builders[type.name] = newEntry;
-            }
-            else if (type.prototype instanceof ExtensionLoader) {
-                if (existing) {
-                    const existingConfig = manager.settings.loaders[parentTypeName] || {};
-                    manager.settings.loaders[parentTypeName] = { ...existingConfig, ...newEntry };
-                }
-                else
-                    manager.settings.loaders[type.name] = newEntry;
-            }
+                    targetConfig[type.name] = newEntry;
+            };
+
+            if (type.prototype instanceof GeneratorBase)
+                updateTypeInfo(manager.settings.ast.generators, newEntry);
+            else if (type.prototype instanceof AstBuilder)
+                updateTypeInfo(manager.settings.ast.builders, newEntry);
+            else if (type.prototype instanceof ExtensionLoader)
+                updateTypeInfo(manager.loaders, newEntry);
+            return this;
         }
-        return this;
     }
 
     /**
      * Allow the user to update the configuration
-     * @param {function(Partial<KLF.IModuleManager>): Partial<KLF.IModuleManager>} callback The changes to apply to the config
+     * @param {KLF.ExtendConfigCallback} callback The changes to apply to the config
      * @returns 
      */
     updateConfig(callback) {
-        const newConfig = callback(manager.settings);
+        const newConfig = callback(manager.settings, { LogDetailLevel });
         if (typeof newConfig === 'object') {
             manager.applyConfigChange(newConfig);
         }

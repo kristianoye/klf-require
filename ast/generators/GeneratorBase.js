@@ -75,6 +75,10 @@ class GeneratorBase {
         }
     }
 
+    static getDefaultConfig() {
+        return { enabled: true };
+    }
+
     /**
      * Attempt to create a token given the information we have
      * @param {KLF.IAstBuilder} ast The AST builder
