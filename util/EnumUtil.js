@@ -1,6 +1,13 @@
-(function () {
-    'use strict';
+/**
+ * KLF Require Core
+ * Written by Kristian Oye
+ * Date: August 13, 2024
+ * 
+ * @version 1.0.0
+ */
+'use strict';
 
+class EnumUtil {
     /**
      * Assign numeric values to each key in a dictionary;
      * Allow for lookup by name or index
@@ -10,7 +17,7 @@
      * @param {KLF.EnumType} enumType The type of enum
      * @returns {T & { parse: function(string | number): T, toString: function(string | number): string, tryParse: function(string | number, defaultValue: T, getNVP: false ): T }}
      */
-    function createEnum(typeName, o, enumType = 'number') {
+    static createEnum(typeName, o, enumType = 'number') {
         /** @type {KLF.EnumType[]} */
         const validTypes = ['bitflag', 'number', 'string'];
         if (validTypes.indexOf(enumType) === -1)
@@ -164,6 +171,7 @@
         }
         return Object.freeze(result), Object.seal(result);
     }
+}
 
-    module.exports = createEnum;
-})();
+
+module.exports = EnumUtil;
